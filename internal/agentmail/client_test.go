@@ -168,3 +168,38 @@ func TestRedirectsAreNotFollowed(t *testing.T) {
 		t.Errorf("error is %v, want the 302 itself", err)
 	}
 }
+
+func TestAKeyWhoseResponseCannotBeDecodedKeepsItsID(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"api_key_id":"key_1","api_key":"am_1","prefix":"am_1","name":"ci","created_at":"yesterday"}`))
+	})
+	_, err := c.CreateAPIKey(context.Background(), APIKeyScope{}, CreateAPIKeyRequest{})
+	var undecoded *UndecodedKeyError
+	if !errors.As(err, &undecoded) || undecoded.APIKeyID != "key_1" {
+		t.Fatalf("got %v, want an UndecodedKeyError for key_1", err)
+	}
+}
+
+func TestAKeyWhoseResponseIsNotJSONIsStillReportedAsCreated(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"api_key_id":"key_1","api_k`))
+	})
+	_, err := c.CreateAPIKey(context.Background(), APIKeyScope{}, CreateAPIKeyRequest{})
+	var undecoded *UndecodedKeyError
+	if !errors.As(err, &undecoded) || undecoded.APIKeyID != "" {
+		t.Fatalf("got %v, want an UndecodedKeyError without an ID", err)
+	}
+}
+
+func TestARefusedKeyIsNotReportedAsCreated(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"name":"ForbiddenError","message":"no"}`))
+	})
+	_, err := c.CreateAPIKey(context.Background(), APIKeyScope{}, CreateAPIKeyRequest{})
+	var undecoded *UndecodedKeyError
+	if errors.As(err, &undecoded) {
+		t.Fatalf("got %v, want an APIError", err)
+	}
+}
