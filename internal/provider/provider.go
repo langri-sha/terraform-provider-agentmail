@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -17,6 +18,8 @@ import (
 
 // APIKeyEnv names the environment variable the API key falls back to.
 const APIKeyEnv = "AGENTMAIL_API_KEY"
+
+var _ provider.ProviderWithEphemeralResources = (*agentmailProvider)(nil)
 
 // New returns a providerserver factory.
 func New(version, commit string) func() provider.Provider {
@@ -101,6 +104,12 @@ func (p *agentmailProvider) Configure(ctx context.Context, req provider.Configur
 func (p *agentmailProvider) Resources(context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		newInboxResource,
+	}
+}
+
+func (p *agentmailProvider) EphemeralResources(context.Context) []func() ephemeral.EphemeralResource {
+	return []func() ephemeral.EphemeralResource{
+		newAPIKeyEphemeral,
 	}
 }
 
