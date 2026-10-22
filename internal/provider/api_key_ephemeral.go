@@ -10,6 +10,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral/schema"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -192,10 +193,21 @@ func (e *apiKeyEphemeral) Open(ctx context.Context, req ephemeral.OpenRequest, r
 
 	scope := agentmail.APIKeyScope{PodID: config.PodID.ValueString(), InboxID: config.InboxID.ValueString()}
 	created, err := e.client.CreateAPIKey(ctx, scope, request)
-	if err != nil {
+	var undecoded *agentmail.UndecodedKeyError
+	switch {
+	case errors.As(err, &undecoded):
+		resp.Diagnostics.AddError("Could not read the minted API key", err.Error())
+		resp.Diagnostics.Append(e.revokeUnusable(ctx, scope, undecoded.APIKeyID))
+		return
+	case err != nil:
 		resp.Diagnostics.AddError("Could not mint the API key", err.Error()+explainKeyRefusal(err, request.ExpiresAt != nil))
 		return
 	}
+	defer func() {
+		if resp.Diagnostics.HasError() {
+			resp.Diagnostics.Append(e.revokeUnusable(ctx, scope, created.APIKeyID))
+		}
+	}()
 
 	config.APIKey = types.StringValue(created.APIKey)
 	config.APIKeyID = types.StringValue(created.APIKeyID)
@@ -236,6 +248,26 @@ func (e *apiKeyEphemeral) Close(ctx context.Context, req ephemeral.CloseRequest,
 			fmt.Sprintf("Revoking %s failed, so it stays valid until it expires: %s", private.APIKeyID, err))
 	}
 }
+
+// revokeUnusable revokes a key that Open created but failed to hand out.
+// Terraform closes only the ephemeral resources it opened, so Close never
+// sees this key. Revoking outlives a cancelled run, since an interrupt is one
+// way Open fails.
+func (e *apiKeyEphemeral) revokeUnusable(ctx context.Context, scope agentmail.APIKeyScope, apiKeyID string) diag.Diagnostic {
+	if apiKeyID == "" {
+		return diag.NewErrorDiagnostic("The minted API key may still be live",
+			"AgentMail created a key but the provider can't tell which, so it can't revoke it. Find it in AgentMail and revoke it.")
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTimeout)
+	defer cancel()
+	if err := e.client.DeleteAPIKey(ctx, scope, apiKeyID); err != nil && !agentmail.IsNotFound(err) {
+		return diag.NewErrorDiagnostic("Could not revoke the API key",
+			fmt.Sprintf("Revoking %s failed, so it stays valid until it expires: %s", apiKeyID, err))
+	}
+	return diag.NewWarningDiagnostic("Revoked the minted API key", fmt.Sprintf("Revoked %s, since the run can't use it.", apiKeyID))
+}
+
+const revokeTimeout = 30 * time.Second
 
 func explainKeyRefusal(err error, setsExpiry bool) string {
 	var apiErr *agentmail.APIError

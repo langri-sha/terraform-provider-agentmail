@@ -52,6 +52,7 @@ type Server struct {
 	exchanges  []Exchange
 	pageSize   int
 	emptyPages bool
+	keyAnswer  func(apiKeyID string) string
 }
 
 // New starts a fake with a default pod, the agentmail.to domain and an
