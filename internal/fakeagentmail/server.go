@@ -47,6 +47,7 @@ type Server struct {
 	domains    map[string]bool
 	keys       map[string]*apiKey
 	inboxes    map[string]*inbox
+	lists      map[listKey]map[string]*listEntry
 	exchanges  []Exchange
 	pageSize   int
 	emptyPages bool
@@ -136,6 +137,7 @@ func (s *Server) Exchanges() []Exchange {
 
 func (s *Server) routes(mux *http.ServeMux) {
 	s.inboxRoutes(mux)
+	s.listRoutes(mux)
 }
 
 func (s *Server) record(next http.Handler) http.Handler {

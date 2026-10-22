@@ -17,8 +17,13 @@ import (
 )
 
 var undeclaredStatuses = map[string]string{
-	"* 401": "agentmail-docs fern/pages/resources/errors.mdx lists 401 missing_authorization, unknown_api_key and api_key_expired; no route declares 401",
+	"* 401":                              "agentmail-docs fern/pages/resources/errors.mdx lists 401 missing_authorization, unknown_api_key and api_key_expired; no route declares 401",
 	"POST /v0/pods/{pod_id}/inboxes 404": "the same errors.mdx answers a missing resource with not_found, and the other pod-scoped inbox routes declare 404 for a missing pod",
+	"GET /v0/pods/{pod_id}/lists/{direction}/{type} 404":       "the entry routes under the same prefix declare 404 for a missing pod",
+	"POST /v0/pods/{pod_id}/lists/{direction}/{type} 404":      "the entry routes under the same prefix declare 404 for a missing pod",
+	"GET /v0/inboxes/{inbox_id}/lists/{direction}/{type} 404":  "the entry routes under the same prefix declare 404 for a missing inbox",
+	"POST /v0/inboxes/{inbox_id}/lists/{direction}/{type} 404": "the entry routes under the same prefix declare 404 for a missing inbox",
+	"DELETE /v0/lists/{direction}/{type}/{entry} 403":          "ListEntryBase.read_only: the entry \"cannot be deleted via the API\"; the status is not documented",
 }
 
 type openAPI struct {
@@ -262,6 +267,7 @@ func TestEveryExchangeMatchesTheOpenAPIDocument(t *testing.T) {
 
 	for _, exercise := range []func(*testing.T, *fakeagentmail.Server){
 		exerciseInboxes,
+		exerciseLists,
 	} {
 		exercise(t, s)
 	}
