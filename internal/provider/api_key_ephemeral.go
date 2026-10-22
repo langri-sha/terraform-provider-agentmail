@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	_ ephemeral.EphemeralResourceWithConfigure = (*apiKeyEphemeral)(nil)
-	_ ephemeral.EphemeralResourceWithClose     = (*apiKeyEphemeral)(nil)
+	_ ephemeral.EphemeralResourceWithConfigure      = (*apiKeyEphemeral)(nil)
+	_ ephemeral.EphemeralResourceWithClose          = (*apiKeyEphemeral)(nil)
+	_ ephemeral.EphemeralResourceWithValidateConfig = (*apiKeyEphemeral)(nil)
 )
 
 func newAPIKeyEphemeral() ephemeral.EphemeralResource { return &apiKeyEphemeral{} }
@@ -31,16 +32,17 @@ type apiKeyEphemeral struct {
 }
 
 type apiKeyModel struct {
-	Name        types.String `tfsdk:"name"`
-	PodID       types.String `tfsdk:"pod_id"`
-	InboxID     types.String `tfsdk:"inbox_id"`
-	Permissions types.Set    `tfsdk:"permissions"`
-	TTL         types.String `tfsdk:"ttl"`
-	ExpiresAt   types.String `tfsdk:"expires_at"`
-	APIKey      types.String `tfsdk:"api_key"`
-	APIKeyID    types.String `tfsdk:"api_key_id"`
-	Prefix      types.String `tfsdk:"prefix"`
-	CreatedAt   types.String `tfsdk:"created_at"`
+	Name          types.String `tfsdk:"name"`
+	PodID         types.String `tfsdk:"pod_id"`
+	InboxID       types.String `tfsdk:"inbox_id"`
+	Permissions   types.Set    `tfsdk:"permissions"`
+	TTL           types.String `tfsdk:"ttl"`
+	ExpiresAt     types.String `tfsdk:"expires_at"`
+	RevokeOnClose types.Bool   `tfsdk:"revoke_on_close"`
+	APIKey        types.String `tfsdk:"api_key"`
+	APIKeyID      types.String `tfsdk:"api_key_id"`
+	Prefix        types.String `tfsdk:"prefix"`
+	CreatedAt     types.String `tfsdk:"created_at"`
 }
 
 // apiKeyPrivate is what Close needs to revoke the key.
@@ -61,7 +63,9 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 		MarkdownDescription: "Mints an AgentMail API key without writing its secret to plan or state.\n\n" +
 			"Terraform opens ephemeral resources during `plan` as well as `apply`, so **every plan and every apply mints a new key**, " +
 			"and the provider's own key needs the `api_key_create` permission at plan time. " +
-			"The key is revoked when Terraform closes the resource at the end of the run, so it suits handing to another provider configuration.\n\n" +
+			"By default the key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration. " +
+			"To store the key somewhere that outlives the run, set `revoke_on_close = false` with `ttl` or `expires_at`, " +
+			"and gate the resource with `count` so it mints only when you rotate.\n\n" +
 			"A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -98,6 +102,10 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 				Validators:          []validator.String{rfc3339Validator{}},
 				MarkdownDescription: "When the key expires, in RFC 3339. Set it or `ttl`, or read the inherited expiry here. AgentMail can't change it afterwards.",
 			},
+			"revoke_on_close": schema.BoolAttribute{
+				Optional:            true,
+				MarkdownDescription: "Revoke the key when Terraform closes the resource at the end of the run. Defaults to `true`. Setting `false` requires `ttl` or `expires_at`.",
+			},
 			"api_key": schema.StringAttribute{
 				Computed:            true,
 				Sensitive:           true,
@@ -129,6 +137,19 @@ func (e *apiKeyEphemeral) Configure(_ context.Context, req ephemeral.ConfigureRe
 		return
 	}
 	e.client = client
+}
+
+func (e *apiKeyEphemeral) ValidateConfig(ctx context.Context, req ephemeral.ValidateConfigRequest, resp *ephemeral.ValidateConfigResponse) {
+	var config apiKeyModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	keepsKey := !config.RevokeOnClose.IsNull() && !config.RevokeOnClose.IsUnknown() && !config.RevokeOnClose.ValueBool()
+	if keepsKey && config.TTL.IsNull() && config.ExpiresAt.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("revoke_on_close"), "A kept key needs an expiry",
+			"Every plan and apply mints a new key, so a key that isn't revoked on close must expire: set ttl or expires_at.")
+	}
 }
 
 func (e *apiKeyEphemeral) Open(ctx context.Context, req ephemeral.OpenRequest, resp *ephemeral.OpenResponse) {
@@ -188,18 +209,20 @@ func (e *apiKeyEphemeral) Open(ctx context.Context, req ephemeral.OpenRequest, r
 	}
 	resp.Diagnostics.Append(resp.Result.Set(ctx, &config)...)
 
-	private, err := json.Marshal(apiKeyPrivate{APIKeyID: created.APIKeyID, PodID: scope.PodID, InboxID: scope.InboxID})
-	if err != nil {
-		resp.Diagnostics.AddError("Could not remember the key to revoke", err.Error())
-		return
+	if config.RevokeOnClose.IsNull() || config.RevokeOnClose.ValueBool() {
+		private, err := json.Marshal(apiKeyPrivate{APIKeyID: created.APIKeyID, PodID: scope.PodID, InboxID: scope.InboxID})
+		if err != nil {
+			resp.Diagnostics.AddError("Could not remember the key to revoke", err.Error())
+			return
+		}
+		resp.Diagnostics.Append(resp.Private.SetKey(ctx, apiKeyPrivateKey, private)...)
 	}
-	resp.Diagnostics.Append(resp.Private.SetKey(ctx, apiKeyPrivateKey, private)...)
 }
 
 func (e *apiKeyEphemeral) Close(ctx context.Context, req ephemeral.CloseRequest, resp *ephemeral.CloseResponse) {
 	raw, diags := req.Private.GetKey(ctx, apiKeyPrivateKey)
 	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
+	if resp.Diagnostics.HasError() || raw == nil {
 		return
 	}
 	var private apiKeyPrivate

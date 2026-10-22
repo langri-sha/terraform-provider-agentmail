@@ -138,6 +138,64 @@ resource "agentmail_inbox" "support" {
 	})
 }
 
+func TestAccAPIKey_KeepsAKeyWhenAskedTo(t *testing.T) {
+	s := fakeagentmail.New(t)
+	inbox := s.SeedInbox(t, fakeagentmail.InboxSeed{Username: "scoped"})
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   ephemeralResourcesSupported,
+		ProtoV6ProviderFactories: withEcho,
+		Steps: []resource.TestStep{
+			{
+				Config: providerBlock(s) + `
+ephemeral "agentmail_api_key" "kept" {
+  inbox_id        = "` + inbox + `"
+  permissions     = ["message_send"]
+  expires_at      = "` + time.Now().Add(24*time.Hour).UTC().Format(time.RFC3339) + `"
+  revoke_on_close = false
+}
+
+provider "echo" {
+  data = ephemeral.agentmail_api_key.kept
+}
+
+resource "echo" "key" {}
+`,
+				Check: resource.TestCheckResourceAttrWith("echo.key", "data.api_key_id", func(id string) error {
+					got := s.APIKeyJSON(id)
+					if !strings.Contains(got, `"inbox_id":"`+inbox+`"`) {
+						return fmt.Errorf("key %s is %q, want it live and scoped to %s", id, got, inbox)
+					}
+					return nil
+				}),
+			},
+		},
+	})
+}
+
+func TestAccAPIKey_RefusesToKeepAKeyThatNeverExpires(t *testing.T) {
+	s := fakeagentmail.New(t)
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   ephemeralResourcesSupported,
+		ProtoV6ProviderFactories: withEcho,
+		Steps: []resource.TestStep{
+			{
+				Config: providerBlock(s) + `
+ephemeral "agentmail_api_key" "kept" {
+  revoke_on_close = false
+}
+
+provider "echo" {
+  data = ephemeral.agentmail_api_key.kept
+}
+
+resource "echo" "key" {}
+`,
+				ExpectError: regexp.MustCompile(`A kept key needs an expiry`),
+			},
+		},
+	})
+}
+
 func TestAccAPIKey_ExplainsWhyAgentMailRefusedIt(t *testing.T) {
 	s := fakeagentmail.New(t)
 	parentExpiry := time.Now().Add(time.Hour)
