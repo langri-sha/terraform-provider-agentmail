@@ -223,7 +223,22 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 	}
 	s.keys[k.Secret] = k
 	s.minted = append(s.minted, k.Secret)
+	if s.keyAnswer != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(s.keyAnswer(k.ID)))
+		return
+	}
 	writeJSON(w, http.StatusOK, k.wire(true))
+}
+
+// AnswerKeyCreationsWith makes the fake create keys as usual but answer with
+// body instead of the key, as a server whose response is cut short or
+// changes shape would.
+func (s *Server) AnswerKeyCreationsWith(body func(apiKeyID string) string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keyAnswer = body
 }
 
 func (s *Server) findKey(id string) *apiKey {

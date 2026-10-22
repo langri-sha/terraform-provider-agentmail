@@ -247,3 +247,53 @@ resource "echo" "key" {}
 		})
 	}
 }
+
+func keptKeyConfig(s *fakeagentmail.Server) string {
+	return providerBlock(s) + `
+ephemeral "agentmail_api_key" "kept" {
+  permissions     = ["inbox_read"]
+  ttl             = "24h"
+  revoke_on_close = false
+}
+
+provider "echo" {
+  data = ephemeral.agentmail_api_key.kept
+}
+
+resource "echo" "key" {}
+`
+}
+
+func TestAccAPIKey_RevokesAKeyWhoseResponseItCannotRead(t *testing.T) {
+	s := fakeagentmail.New(t)
+	s.AnswerKeyCreationsWith(func(id string) string {
+		return `{"api_key_id":"` + id + `","api_key":"am_x","prefix":"am_x","name":"","created_at":"yesterday"}`
+	})
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   ephemeralResourcesSupported,
+		ProtoV6ProviderFactories: withEcho,
+		Steps: []resource.TestStep{{
+			Config:      keptKeyConfig(s),
+			ExpectError: regexp.MustCompile(`Could not read the minted API key`),
+		}},
+	})
+	if len(s.MintedSecrets()) == 0 {
+		t.Fatal("the fake minted no keys")
+	}
+	if live := s.LiveKeyIDs(); !slices.Equal(live, []string{"key_root"}) {
+		t.Errorf("live keys are %v, want only the root key", live)
+	}
+}
+
+func TestAccAPIKey_SaysAKeyMayBeLiveWhenItCannotTellWhich(t *testing.T) {
+	s := fakeagentmail.New(t)
+	s.AnswerKeyCreationsWith(func(string) string { return `{"api_key_id":` })
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   ephemeralResourcesSupported,
+		ProtoV6ProviderFactories: withEcho,
+		Steps: []resource.TestStep{{
+			Config:      keptKeyConfig(s),
+			ExpectError: regexp.MustCompile(`The minted API key may still be live`),
+		}},
+	})
+}
