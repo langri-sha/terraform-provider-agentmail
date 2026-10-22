@@ -104,6 +104,7 @@ func (p *agentmailProvider) Configure(ctx context.Context, req provider.Configur
 func (p *agentmailProvider) Resources(context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		newInboxResource,
+		newListResource,
 	}
 }
 
