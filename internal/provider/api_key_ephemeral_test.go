@@ -297,3 +297,52 @@ func TestAccAPIKey_SaysAKeyMayBeLiveWhenItCannotTellWhich(t *testing.T) {
 		}},
 	})
 }
+
+func TestAccAPIKey_RevokesAKeyThatDiffersFromTheRequest(t *testing.T) {
+	later := time.Now().Add(48 * time.Hour)
+	cases := map[string]struct {
+		alter func(*fakeagentmail.KeyGrant)
+		want  string
+	}{
+		"an extra permission": {
+			alter: func(g *fakeagentmail.KeyGrant) { g.Permissions["inbox_delete"] = true },
+			want:  `grants inbox_delete, inbox_read`,
+		},
+		"a missing permission": {
+			alter: func(g *fakeagentmail.KeyGrant) { g.Permissions = map[string]bool{} },
+			want:  `grants no permissions`,
+		},
+		"no restriction": {
+			alter: func(g *fakeagentmail.KeyGrant) { g.Permissions = nil },
+			want:  `is unrestricted`,
+		},
+		"no expiry": {
+			alter: func(g *fakeagentmail.KeyGrant) { g.ExpiresAt = nil },
+			want:  `never expires`,
+		},
+		"another expiry": {
+			alter: func(g *fakeagentmail.KeyGrant) { g.ExpiresAt = &later },
+			want:  `expires at`,
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := fakeagentmail.New(t)
+			s.AlterKeyGrants(c.alter)
+			resource.UnitTest(t, resource.TestCase{
+				TerraformVersionChecks:   ephemeralResourcesSupported,
+				ProtoV6ProviderFactories: withEcho,
+				Steps: []resource.TestStep{{
+					Config:      keptKeyConfig(s),
+					ExpectError: regexp.MustCompile(`(?s)AgentMail minted a different key than requested.*` + c.want),
+				}},
+			})
+			if len(s.MintedSecrets()) == 0 {
+				t.Fatal("the fake minted no keys")
+			}
+			if live := s.LiveKeyIDs(); !slices.Equal(live, []string{"key_root"}) {
+				t.Errorf("live keys are %v, want only the root key", live)
+			}
+		})
+	}
+}
