@@ -2,6 +2,9 @@ package agentmail
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -118,11 +121,40 @@ type APIKey struct {
 	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
 }
 
+// UndecodedKeyError reports a key AgentMail created whose response could not
+// be decoded. The key is live; APIKeyID is empty when not even its ID could
+// be read.
+type UndecodedKeyError struct {
+	APIKeyID string
+	Err      error
+}
+
+func (e *UndecodedKeyError) Error() string {
+	if e.APIKeyID == "" {
+		return fmt.Sprintf("agentmail: created a key but could not read which: %s", e.Err)
+	}
+	return fmt.Sprintf("agentmail: created key %s but could not read it: %s", e.APIKeyID, e.Err)
+}
+
+func (e *UndecodedKeyError) Unwrap() error { return e.Err }
+
 // CreateAPIKey mints a bearer key in scope.
 func (c *Client) CreateAPIKey(ctx context.Context, scope APIKeyScope, req CreateAPIKeyRequest) (*CreatedAPIKey, error) {
-	var key CreatedAPIKey
-	if err := c.do(ctx, http.MethodPost, scope.path(), nil, req, &key); err != nil {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodPost, scope.path(), nil, req, &raw); err != nil {
+		var syntaxErr *json.SyntaxError
+		if errors.As(err, &syntaxErr) {
+			return nil, &UndecodedKeyError{Err: err}
+		}
 		return nil, err
+	}
+	var key CreatedAPIKey
+	if err := json.Unmarshal(raw, &key); err != nil {
+		var id struct {
+			APIKeyID string `json:"api_key_id"`
+		}
+		_ = json.Unmarshal(raw, &id)
+		return nil, &UndecodedKeyError{APIKeyID: id.APIKeyID, Err: err}
 	}
 	return &key, nil
 }
