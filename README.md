@@ -71,10 +71,6 @@ provider "agentmail" {
 }
 ```
 
-To store a key that outlives the run, set `revoke_on_close = false` with a
-`ttl` or `expires_at`, and hand it to a write-only attribute. See the
-[`agentmail_api_key` docs](./docs/ephemeral-resources/api_key.md).
-
 ## Importing
 
 ```sh
