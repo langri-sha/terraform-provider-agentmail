@@ -206,6 +206,11 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 	if body.Name != nil {
 		k.Name = *body.Name
 	}
+	if s.keyGrant != nil {
+		grant := KeyGrant{Permissions: k.Permissions, ExpiresAt: k.ExpiresAt}
+		s.keyGrant(&grant)
+		k.Permissions, k.ExpiresAt = grant.Permissions, grant.ExpiresAt
+	}
 	switch {
 	case r.PathValue("inbox_id") != "":
 		in, ok := s.inboxes[r.PathValue("inbox_id")]
@@ -230,6 +235,21 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, k.wire(true))
+}
+
+// KeyGrant is what a created key may do and when it expires.
+type KeyGrant struct {
+	// Permissions is nil for an unrestricted key.
+	Permissions map[string]bool
+	ExpiresAt   *time.Time
+}
+
+// AlterKeyGrants makes the fake change what it grants each key it creates
+// from now on, as a server that ignores part of a request would.
+func (s *Server) AlterKeyGrants(alter func(*KeyGrant)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keyGrant = alter
 }
 
 // AnswerKeyCreationsWith makes the fake create keys as usual but answer with

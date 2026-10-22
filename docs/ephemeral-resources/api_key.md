@@ -6,6 +6,7 @@ description: |-
   Mints an AgentMail API key without writing its secret to plan or state.
   Terraform opens ephemeral resources during plan as well as apply, so every plan and every apply mints a new key, and the provider's own key needs the api_key_create permission at plan time. By default the key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration. To store the key somewhere that outlives the run, set revoke_on_close = false with ttl or expires_at, and gate the resource with count so it mints only when you rotate.
   A key can't outlive the key that mints it. Without ttl or expires_at it inherits the provider key's expiry, and never expires when that key never does.
+  The provider checks the minted key against the request: its permissions, when set, and its expiry, when set. A key that differs is revoked and the run fails.
 ---
 
 # agentmail_api_key (Ephemeral Resource)
@@ -15,6 +16,8 @@ Mints an AgentMail API key without writing its secret to plan or state.
 Terraform opens ephemeral resources during `plan` as well as `apply`, so **every plan and every apply mints a new key**, and the provider's own key needs the `api_key_create` permission at plan time. By default the key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration. To store the key somewhere that outlives the run, set `revoke_on_close = false` with `ttl` or `expires_at`, and gate the resource with `count` so it mints only when you rotate.
 
 A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.
+
+The provider checks the minted key against the request: its permissions, when set, and its expiry, when set. A key that differs is revoked and the run fails.
 
 ## Example Usage
 

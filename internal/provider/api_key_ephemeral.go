@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
@@ -67,7 +69,9 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 			"By default the key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration. " +
 			"To store the key somewhere that outlives the run, set `revoke_on_close = false` with `ttl` or `expires_at`, " +
 			"and gate the resource with `count` so it mints only when you rotate.\n\n" +
-			"A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.",
+			"A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.\n\n" +
+			"The provider checks the minted key against the request: its permissions, when set, and its expiry, when set. " +
+			"A key that differs is revoked and the run fails.",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
 				Optional:            true,
@@ -208,6 +212,10 @@ func (e *apiKeyEphemeral) Open(ctx context.Context, req ephemeral.OpenRequest, r
 			resp.Diagnostics.Append(e.revokeUnusable(ctx, scope, created.APIKeyID))
 		}
 	}()
+	if err := keyMatchesRequest(request, created); err != nil {
+		resp.Diagnostics.AddError("AgentMail minted a different key than requested", err.Error())
+		return
+	}
 
 	config.APIKey = types.StringValue(created.APIKey)
 	config.APIKeyID = types.StringValue(created.APIKeyID)
@@ -247,6 +255,48 @@ func (e *apiKeyEphemeral) Close(ctx context.Context, req ephemeral.CloseRequest,
 		resp.Diagnostics.AddError("Could not revoke the API key",
 			fmt.Sprintf("Revoking %s failed, so it stays valid until it expires: %s", private.APIKeyID, err))
 	}
+}
+
+// keyMatchesRequest refuses a key that can do more or less than requested, or
+// that expires at another time, before anything stores it.
+func keyMatchesRequest(request agentmail.CreateAPIKeyRequest, created *agentmail.CreatedAPIKey) error {
+	if request.Permissions != nil {
+		if created.Permissions == nil {
+			return fmt.Errorf("%s is unrestricted, but only %s were requested", created.APIKeyID, permissionList(grantedNames(*request.Permissions)))
+		}
+		want, got := grantedNames(*request.Permissions), grantedNames(created.Permissions)
+		if !slices.Equal(want, got) {
+			return fmt.Errorf("%s grants %s, but %s were requested", created.APIKeyID, permissionList(got), permissionList(want))
+		}
+	}
+	if request.ExpiresAt != nil {
+		want := request.ExpiresAt.Truncate(time.Second)
+		switch {
+		case created.ExpiresAt == nil:
+			return fmt.Errorf("%s never expires, but %s was requested", created.APIKeyID, want.UTC().Format(time.RFC3339))
+		case !created.ExpiresAt.Truncate(time.Second).Equal(want):
+			return fmt.Errorf("%s expires at %s, but %s was requested", created.APIKeyID, created.ExpiresAt.UTC().Format(time.RFC3339), want.UTC().Format(time.RFC3339))
+		}
+	}
+	return nil
+}
+
+func grantedNames(permissions map[string]bool) []string {
+	var names []string
+	for name, granted := range permissions {
+		if granted {
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+func permissionList(names []string) string {
+	if len(names) == 0 {
+		return "no permissions"
+	}
+	return strings.Join(names, ", ")
 }
 
 // revokeUnusable revokes a key that Open created but failed to hand out.
