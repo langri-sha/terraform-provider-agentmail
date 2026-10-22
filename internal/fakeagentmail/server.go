@@ -46,6 +46,7 @@ type Server struct {
 	pods       map[string]bool
 	domains    map[string]bool
 	keys       map[string]*apiKey
+	minted     []string
 	inboxes    map[string]*inbox
 	lists      map[listKey]map[string]*listEntry
 	exchanges  []Exchange
@@ -68,7 +69,7 @@ func New(t testing.TB) *Server {
 		pageSize:   100,
 	}
 	s.pods[s.defaultPod] = true
-	root := &apiKey{ID: "key_root", Secret: "am_root_" + randomHex(16), Prefix: "am_root", Name: "root"}
+	root := &apiKey{ID: "key_root", Secret: "am_root_" + randomHex(16), Prefix: "am_root", Name: "root", CreatedAt: s.now(), UpdatedAt: s.now()}
 	s.keys[root.Secret] = root
 
 	mux := http.NewServeMux()
@@ -138,6 +139,7 @@ func (s *Server) Exchanges() []Exchange {
 func (s *Server) routes(mux *http.ServeMux) {
 	s.inboxRoutes(mux)
 	s.listRoutes(mux)
+	s.keyRoutes(mux)
 }
 
 func (s *Server) record(next http.Handler) http.Handler {
@@ -193,6 +195,10 @@ func (s *Server) authenticate(next *http.ServeMux) http.Handler {
 		s.mu.Lock()
 		k := s.keys[secret]
 		expired := k != nil && k.ExpiresAt != nil && !s.now().Before(*k.ExpiresAt)
+		if k != nil && !expired {
+			used := s.now()
+			k.UsedAt = &used
+		}
 		s.mu.Unlock()
 		switch {
 		case k == nil:
