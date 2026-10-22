@@ -311,6 +311,7 @@ func (s *Server) deleteInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delete(s.inboxes, id)
+	s.dropInboxLists(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
