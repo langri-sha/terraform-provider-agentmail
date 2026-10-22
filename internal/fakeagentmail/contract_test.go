@@ -23,6 +23,7 @@ var undeclaredStatuses = map[string]string{
 	"POST /v0/pods/{pod_id}/lists/{direction}/{type} 404":      "the entry routes under the same prefix declare 404 for a missing pod",
 	"GET /v0/inboxes/{inbox_id}/lists/{direction}/{type} 404":  "the entry routes under the same prefix declare 404 for a missing inbox",
 	"POST /v0/inboxes/{inbox_id}/lists/{direction}/{type} 404": "the entry routes under the same prefix declare 404 for a missing inbox",
+	"POST /v0/api-keys 403":                                    "CreateBearerApiKeyRequest: \"an expires_at later than the authenticating key's own returns 403\"; permissions.mdx answers a missing permission or an escalation with 403",
 	"DELETE /v0/lists/{direction}/{type}/{entry} 403":          "ListEntryBase.read_only: the entry \"cannot be deleted via the API\"; the status is not documented",
 }
 
@@ -268,6 +269,7 @@ func TestEveryExchangeMatchesTheOpenAPIDocument(t *testing.T) {
 	for _, exercise := range []func(*testing.T, *fakeagentmail.Server){
 		exerciseInboxes,
 		exerciseLists,
+		exerciseAPIKeys,
 	} {
 		exercise(t, s)
 	}
