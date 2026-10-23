@@ -7,7 +7,8 @@ A Terraform provider for [AgentMail](https://agentmail.to): manage agent inboxes
 It manages inboxes as `agentmail_inbox`, each allow or block list as one
 authoritative `agentmail_list`, and mints scoped, expiring API keys with the
 ephemeral `agentmail_api_key`, whose secret never reaches plan or state.
-Pre-1.0 and not yet published to the Terraform Registry.
+Pre-1.0, and published on the Terraform Registry as
+[`langri-sha/agentmail`](https://registry.terraform.io/providers/langri-sha/agentmail).
 
 ## Usage
 
