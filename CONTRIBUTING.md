@@ -52,6 +52,8 @@ The provider is meant for the public Terraform Registry as
    archives, generates and GPG-signs `SHA256SUMS`, and attaches them, plus
    `terraform-registry-manifest.json`, to the release. The registry ingests it.
 
-Publishing needs one-time setup outside the repo, which is not done yet: the
-signing key's public half registered on the langri-sha registry account, and
-`GPG_PRIVATE_KEY` and `PASSPHRASE` stored as Actions secrets.
+Publishing relies on one-time setup outside the repo. The signing key's public
+half is registered on the langri-sha registry namespace, and `GPG_PRIVATE_KEY`
+is an Actions secret; `PASSPHRASE` is needed only when the key has a
+passphrase. The provider is published on the registry once, after the first
+GitHub release exists, because the registry needs a release to publish.
