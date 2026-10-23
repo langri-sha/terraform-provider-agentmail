@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-10-23
+
 ### Added
 
 - Provider configuration: `api_key`, falling back to `AGENTMAIL_API_KEY`, and
@@ -20,4 +22,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The ephemeral `agentmail_api_key`, minting a scoped key with the
   `permissions` and the `ttl` or `expires_at` it must set, without writing the
   secret to plan or state. It is revoked when the run ends unless
-  `revoke_on_close = false`.
+  `revoke_on_close = false`. A minted key whose permissions or expiry differ
+  from the request is revoked, and the run fails.
