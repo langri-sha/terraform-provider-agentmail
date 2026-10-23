@@ -42,7 +42,7 @@ schema or examples change.
 
 ## Releasing
 
-The provider is meant for the public Terraform Registry as
+The provider is published on the public Terraform Registry as
 `langri-sha/agentmail`. Releases are cut from the GitHub UI and built by CI:
 
 1. Update `CHANGELOG.md` for the new version.
