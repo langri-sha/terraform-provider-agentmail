@@ -68,7 +68,7 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 			"and the provider's own key needs the `api_key_create` permission at plan time. " +
 			"The key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration.\n\n" +
 			"A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.\n\n" +
-			"The provider checks the minted key against the request: its permissions, when set, and its expiry, when set. " +
+			"The provider checks the minted key's permissions against the request, and its expiry when set. " +
 			"A key that differs is revoked and the run fails.",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -86,13 +86,12 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 			},
 			"permissions": schema.SetAttribute{
 				ElementType: types.StringType,
-				Optional:    true,
+				Required:    true,
 				Validators: []validator.Set{
 					setvalidator.SizeAtLeast(1),
 					setvalidator.ValueStringsAre(stringvalidator.OneOf(agentmail.Permissions...)),
 				},
-				MarkdownDescription: "The permissions to grant, such as `inbox_read` or `message_send`. " +
-					"**Unset grants every permission**, intersected with the key's scope. A key can't grant permissions its creator lacks.",
+				MarkdownDescription: "The permissions to grant, such as `inbox_read` or `message_send`, intersected with the key's scope. A key can't grant permissions its creator lacks.",
 			},
 			"ttl": schema.StringAttribute{
 				Optional:            true,
@@ -164,18 +163,16 @@ func (e *apiKeyEphemeral) Open(ctx context.Context, req ephemeral.OpenRequest, r
 	}
 
 	request := agentmail.CreateAPIKeyRequest{Name: knownString(config.Name)}
-	if !config.Permissions.IsNull() {
-		var names []string
-		resp.Diagnostics.Append(config.Permissions.ElementsAs(ctx, &names, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		granted := make(map[string]bool, len(names))
-		for _, n := range names {
-			granted[n] = true
-		}
-		request.Permissions = &granted
+	var names []string
+	resp.Diagnostics.Append(config.Permissions.ElementsAs(ctx, &names, false)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
+	granted := make(map[string]bool, len(names))
+	for _, n := range names {
+		granted[n] = true
+	}
+	request.Permissions = &granted
 	switch {
 	case !config.TTL.IsNull():
 		ttl, err := time.ParseDuration(config.TTL.ValueString())

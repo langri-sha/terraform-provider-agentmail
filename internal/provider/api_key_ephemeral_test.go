@@ -181,6 +181,7 @@ func TestAccAPIKey_RefusesToKeepAKeyThatNeverExpires(t *testing.T) {
 			{
 				Config: providerBlock(s) + `
 ephemeral "agentmail_api_key" "kept" {
+  permissions     = ["inbox_read"]
   revoke_on_close = false
 }
 
@@ -194,6 +195,33 @@ resource "echo" "key" {}
 			},
 		},
 	})
+}
+
+func TestAccAPIKey_RefusesAKeyWithoutPermissions(t *testing.T) {
+	s := fakeagentmail.New(t)
+	resource.UnitTest(t, resource.TestCase{
+		TerraformVersionChecks:   ephemeralResourcesSupported,
+		ProtoV6ProviderFactories: withEcho,
+		Steps: []resource.TestStep{
+			{
+				Config: providerBlock(s) + `
+ephemeral "agentmail_api_key" "ci" {
+  ttl = "1h"
+}
+
+provider "echo" {
+  data = ephemeral.agentmail_api_key.ci
+}
+
+resource "echo" "key" {}
+`,
+				ExpectError: regexp.MustCompile(`The argument "permissions" is required`),
+			},
+		},
+	})
+	if minted := s.MintedSecrets(); len(minted) != 0 {
+		t.Errorf("the fake minted %d keys, want none", len(minted))
+	}
 }
 
 func TestAccAPIKey_ExplainsWhyAgentMailRefusedIt(t *testing.T) {

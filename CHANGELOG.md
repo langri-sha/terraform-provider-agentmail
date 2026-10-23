@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `agentmail_list`, one authoritative allow or block list for the
   organization, a pod or an inbox, in the send, receive or reply direction.
   It adds entries before removing any and leaves read-only entries alone.
-- The ephemeral `agentmail_api_key`, minting a scoped key with `permissions`
-  and a `ttl` or `expires_at` without writing the secret to plan or state. It
-  is revoked when the run ends unless `revoke_on_close = false`.
+- The ephemeral `agentmail_api_key`, minting a scoped key with the
+  `permissions` it must list and a `ttl` or `expires_at` without writing the
+  secret to plan or state. It is revoked when the run ends unless
+  `revoke_on_close = false`.
