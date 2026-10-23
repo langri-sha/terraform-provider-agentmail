@@ -67,8 +67,8 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 			"Terraform opens ephemeral resources during `plan` as well as `apply`, so **every plan and every apply mints a new key**, " +
 			"and the provider's own key needs the `api_key_create` permission at plan time. " +
 			"The key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration.\n\n" +
-			"A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.\n\n" +
-			"The provider checks the minted key's permissions against the request, and its expiry when set. " +
+			"A key can't outlive the key that mints it.\n\n" +
+			"The provider checks the minted key's permissions and expiry against the request. " +
 			"A key that differs is revoked and the run fails.",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -96,17 +96,17 @@ func (e *apiKeyEphemeral) Schema(_ context.Context, _ ephemeral.SchemaRequest, r
 			"ttl": schema.StringAttribute{
 				Optional:            true,
 				Validators:          []validator.String{durationValidator{}, stringvalidator.ConflictsWith(path.MatchRoot("expires_at"))},
-				MarkdownDescription: "How long the key lives, as a Go duration such as `720h`.",
+				MarkdownDescription: "How long the key lives, as a Go duration such as `720h`. Set it or `expires_at`.",
 			},
 			"expires_at": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
 				Validators:          []validator.String{rfc3339Validator{}},
-				MarkdownDescription: "When the key expires, in RFC 3339. Set it or `ttl`, or read the inherited expiry here. AgentMail can't change it afterwards.",
+				MarkdownDescription: "When the key expires, in RFC 3339. Set it or `ttl`, and read the expiry `ttl` gives here. AgentMail can't change it afterwards.",
 			},
 			"revoke_on_close": schema.BoolAttribute{
 				Optional: true,
-				MarkdownDescription: "Revoke the key when Terraform closes the resource at the end of the run. Defaults to `true`. Setting `false` requires `ttl` or `expires_at`. " +
+				MarkdownDescription: "Revoke the key when Terraform closes the resource at the end of the run. Defaults to `true`. " +
 					"A kept key isn't yet safe to store for later runs: every plan and apply mints one, and nothing revokes the keys nobody stored, so each stays valid until it expires.",
 			},
 			"api_key": schema.StringAttribute{
@@ -148,10 +148,9 @@ func (e *apiKeyEphemeral) ValidateConfig(ctx context.Context, req ephemeral.Vali
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	keepsKey := !config.RevokeOnClose.IsNull() && !config.RevokeOnClose.IsUnknown() && !config.RevokeOnClose.ValueBool()
-	if keepsKey && config.TTL.IsNull() && config.ExpiresAt.IsNull() {
-		resp.Diagnostics.AddAttributeError(path.Root("revoke_on_close"), "A kept key needs an expiry",
-			"Every plan and apply mints a new key, so a key that isn't revoked on close must expire: set ttl or expires_at.")
+	if config.TTL.IsNull() && config.ExpiresAt.IsNull() {
+		resp.Diagnostics.AddError("An API key needs an expiry",
+			"Set ttl or expires_at, so a key the run fails to revoke stops working on its own.")
 	}
 }
 

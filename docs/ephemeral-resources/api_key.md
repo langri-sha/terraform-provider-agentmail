@@ -5,8 +5,8 @@ subcategory: ""
 description: |-
   Mints an AgentMail API key without writing its secret to plan or state.
   Terraform opens ephemeral resources during plan as well as apply, so every plan and every apply mints a new key, and the provider's own key needs the api_key_create permission at plan time. The key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration.
-  A key can't outlive the key that mints it. Without ttl or expires_at it inherits the provider key's expiry, and never expires when that key never does.
-  The provider checks the minted key's permissions against the request, and its expiry when set. A key that differs is revoked and the run fails.
+  A key can't outlive the key that mints it.
+  The provider checks the minted key's permissions and expiry against the request. A key that differs is revoked and the run fails.
 ---
 
 # agentmail_api_key (Ephemeral Resource)
@@ -15,9 +15,9 @@ Mints an AgentMail API key without writing its secret to plan or state.
 
 Terraform opens ephemeral resources during `plan` as well as `apply`, so **every plan and every apply mints a new key**, and the provider's own key needs the `api_key_create` permission at plan time. The key is revoked when Terraform closes the resource at the end of the run, which suits handing it to another provider configuration.
 
-A key can't outlive the key that mints it. Without `ttl` or `expires_at` it inherits the provider key's expiry, and never expires when that key never does.
+A key can't outlive the key that mints it.
 
-The provider checks the minted key's permissions against the request, and its expiry when set. A key that differs is revoked and the run fails.
+The provider checks the minted key's permissions and expiry against the request. A key that differs is revoked and the run fails.
 
 ## Example Usage
 
@@ -50,12 +50,12 @@ resource "agentmail_inbox" "support" {
 
 ### Optional
 
-- `expires_at` (String) When the key expires, in RFC 3339. Set it or `ttl`, or read the inherited expiry here. AgentMail can't change it afterwards.
+- `expires_at` (String) When the key expires, in RFC 3339. Set it or `ttl`, and read the expiry `ttl` gives here. AgentMail can't change it afterwards.
 - `inbox_id` (String) Scope the key to this inbox.
 - `name` (String) The key's name.
 - `pod_id` (String) Scope the key to this pod. Leave both `pod_id` and `inbox_id` unset for an organization key.
-- `revoke_on_close` (Boolean) Revoke the key when Terraform closes the resource at the end of the run. Defaults to `true`. Setting `false` requires `ttl` or `expires_at`. A kept key isn't yet safe to store for later runs: every plan and apply mints one, and nothing revokes the keys nobody stored, so each stays valid until it expires.
-- `ttl` (String) How long the key lives, as a Go duration such as `720h`.
+- `revoke_on_close` (Boolean) Revoke the key when Terraform closes the resource at the end of the run. Defaults to `true`. A kept key isn't yet safe to store for later runs: every plan and apply mints one, and nothing revokes the keys nobody stored, so each stays valid until it expires.
+- `ttl` (String) How long the key lives, as a Go duration such as `720h`. Set it or `expires_at`.
 
 ### Read-Only
 

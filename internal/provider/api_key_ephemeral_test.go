@@ -172,29 +172,64 @@ resource "echo" "key" {}
 	})
 }
 
-func TestAccAPIKey_RefusesToKeepAKeyThatNeverExpires(t *testing.T) {
-	s := fakeagentmail.New(t)
-	resource.UnitTest(t, resource.TestCase{
-		TerraformVersionChecks:   ephemeralResourcesSupported,
-		ProtoV6ProviderFactories: withEcho,
-		Steps: []resource.TestStep{
-			{
-				Config: providerBlock(s) + `
-ephemeral "agentmail_api_key" "kept" {
+func TestAccAPIKey_RefusesAKeyThatNeverExpires(t *testing.T) {
+	cases := map[string]string{
+		"neither set": `
+ephemeral "agentmail_api_key" "ci" {
+  permissions = ["inbox_read"]
+}
+`,
+		"both null": `
+variable "ttl" {
+  type    = string
+  default = null
+}
+
+ephemeral "agentmail_api_key" "ci" {
+  permissions = ["inbox_read"]
+  ttl         = var.ttl
+  expires_at  = null
+}
+`,
+		"a ttl known only at apply": `
+resource "terraform_data" "ttl" {
+  input = null
+}
+
+ephemeral "agentmail_api_key" "ci" {
+  permissions = ["inbox_read"]
+  ttl         = terraform_data.ttl.output
+}
+`,
+		"a kept key": `
+ephemeral "agentmail_api_key" "ci" {
   permissions     = ["inbox_read"]
   revoke_on_close = false
 }
-
+`,
+	}
+	for name, key := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := fakeagentmail.New(t)
+			resource.UnitTest(t, resource.TestCase{
+				TerraformVersionChecks:   ephemeralResourcesSupported,
+				ProtoV6ProviderFactories: withEcho,
+				Steps: []resource.TestStep{{
+					Config: providerBlock(s) + key + `
 provider "echo" {
-  data = ephemeral.agentmail_api_key.kept
+  data = ephemeral.agentmail_api_key.ci
 }
 
 resource "echo" "key" {}
 `,
-				ExpectError: regexp.MustCompile(`A kept key needs an expiry`),
-			},
-		},
-	})
+					ExpectError: regexp.MustCompile(`An API key needs an expiry`),
+				}},
+			})
+			if minted := s.MintedSecrets(); len(minted) != 0 {
+				t.Errorf("the fake minted %d keys, want none", len(minted))
+			}
+		})
+	}
 }
 
 func TestAccAPIKey_RefusesAKeyWithoutPermissions(t *testing.T) {
@@ -253,16 +288,19 @@ resource "echo" "key" {}
 			want: `can't outlive the key that mints it`,
 		},
 		"a parent that can't create keys": {
-			config: config(reader, `  permissions = ["inbox_read"]`),
-			want:   `can't create keys`,
+			config: config(reader, `  permissions = ["inbox_read"]
+  ttl         = "1h"`),
+			want: `can't create keys`,
 		},
 		"a permission the parent lacks": {
-			config: config(minter, `  permissions = ["inbox_delete"]`),
-			want:   `can't grant permissions`,
+			config: config(minter, `  permissions = ["inbox_delete"]
+  ttl         = "10m"`),
+			want: `can't grant permissions`,
 		},
 		"a permission AgentMail doesn't define": {
-			config: config(s.RootKey(), `  permissions = ["inbox_teleport"]`),
-			want:   `value must be one of`,
+			config: config(s.RootKey(), `  permissions = ["inbox_teleport"]
+  ttl         = "1h"`),
+			want: `value must be one of`,
 		},
 	}
 	for name, c := range cases {
