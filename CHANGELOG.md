@@ -18,6 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   organization, a pod or an inbox, in the send, receive or reply direction.
   It adds entries before removing any and leaves read-only entries alone.
 - The ephemeral `agentmail_api_key`, minting a scoped key with the
-  `permissions` it must list and a `ttl` or `expires_at` without writing the
+  `permissions` and the `ttl` or `expires_at` it must set, without writing the
   secret to plan or state. It is revoked when the run ends unless
   `revoke_on_close = false`.
